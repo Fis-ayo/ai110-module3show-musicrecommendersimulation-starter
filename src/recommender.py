@@ -1,6 +1,44 @@
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
+# ---------------------------------------------------------------------------
+# Scoring Strategy — Strategy Pattern
+# ---------------------------------------------------------------------------
+# Each ScoringWeights instance defines one ranking strategy.
+# Swapping the strategy changes what the recommender prioritises without
+# touching any other code. All presets sum to 4.0 so scores are comparable.
+
+@dataclass
+class ScoringWeights:
+    """Holds the point values for each scoring rule under one strategy."""
+    genre_pts:  float   # points for an exact genre match
+    mood_pts:   float   # points for an exact mood match
+    energy_max: float   # maximum points from energy proximity
+
+    @property
+    def max_score(self) -> float:
+        """Highest possible score under this strategy."""
+        return self.genre_pts + self.mood_pts + self.energy_max
+
+
+# Preset strategies — all max out at 4.0
+SCORING_MODES: Dict[str, ScoringWeights] = {
+    # Genre drives everything; mood and energy are tiebreakers
+    "genre_first":    ScoringWeights(genre_pts=2.5, mood_pts=0.5, energy_max=1.0),
+
+    # Emotional state drives everything; genre is secondary
+    "mood_first":     ScoringWeights(genre_pts=0.5, mood_pts=2.5, energy_max=1.0),
+
+    # How the music physically feels matters most; labels are hints only
+    "energy_focused": ScoringWeights(genre_pts=0.5, mood_pts=0.5, energy_max=3.0),
+
+    # Equal categorical weight, energy doubled — current experimental default
+    "balanced":       ScoringWeights(genre_pts=1.0, mood_pts=1.0, energy_max=2.0),
+}
+
+DEFAULT_MODE = "balanced"
+
+
 @dataclass
 class Song:
     """
@@ -47,27 +85,32 @@ class Recommender:
         # TODO: Implement explanation logic
         return "Explanation placeholder"
 
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
-    """Score one song against user preferences (+2.0 genre, +1.0 mood, +0–1 energy); return (score, reasons)."""
+def score_song(
+    user_prefs: Dict,
+    song: Dict,
+    weights: Optional[ScoringWeights] = None,
+) -> Tuple[float, List[str]]:
+    """Score one song against user preferences using the given ScoringWeights strategy."""
+    if weights is None:
+        weights = SCORING_MODES[DEFAULT_MODE]
+
     score = 0.0
     reasons = []
 
-    # Rule 1 — Genre match: +2.0 points
+    # Rule 1 — Genre match
     if song["genre"] == user_prefs.get("genre", ""):
-        score += 2.0
-        reasons.append(f"genre match (+2.0)")
+        score += weights.genre_pts
+        reasons.append(f"genre match (+{weights.genre_pts})")
 
-    # Rule 2 — Mood match: +1.0 point
+    # Rule 2 — Mood match
     if song["mood"] == user_prefs.get("mood", ""):
-        score += 1.0
-        reasons.append(f"mood match (+1.0)")
+        score += weights.mood_pts
+        reasons.append(f"mood match (+{weights.mood_pts})")
 
-    # Rule 3 — Energy similarity: +0.0 to +1.0 points
-    # Rewards closeness to the user's target, not a high or low absolute value.
-    # A song at 0.40 scores 0.98 for a user targeting 0.38.
-    # A song at 0.91 scores only 0.47 for that same user.
+    # Rule 3 — Energy proximity: energy_max × (1.0 - |song - target|)
+    # Perfect match → energy_max pts.  Worst mismatch → 0 pts.
     target_energy = user_prefs.get("target_energy", 0.5)
-    energy_points = round(1.0 - abs(song["energy"] - target_energy), 2)
+    energy_points = round(weights.energy_max * (1.0 - abs(song["energy"] - target_energy)), 2)
     score += energy_points
     reasons.append(f"energy {song['energy']} vs target {target_energy} (+{energy_points})")
 
@@ -95,16 +138,18 @@ def load_songs(csv_path: str) -> List[Dict]:
             })
     return songs
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
-    """Score every song, sort by score descending, and return the top k as (song, score, explanation) tuples."""
-    # Step 1 — score every song in the catalog
+def recommend_songs(
+    user_prefs: Dict,
+    songs: List[Dict],
+    k: int = 5,
+    mode: str = DEFAULT_MODE,
+) -> List[Tuple[Dict, float, str]]:
+    """Score every song using the named mode, sort descending, return top k as (song, score, explanation) tuples."""
+    weights = SCORING_MODES.get(mode, SCORING_MODES[DEFAULT_MODE])
+
     scored = []
     for song in songs:
-        score, reasons = score_song(user_prefs, song)
+        score, reasons = score_song(user_prefs, song, weights)
         scored.append((song, score, "; ".join(reasons)))
 
-    # Step 2 & 3 — sort by score descending, return top k
-    # sorted() is used here instead of .sort() because:
-    #   sorted() returns a NEW list, leaving `scored` unchanged.
-    #   .sort() sorts IN PLACE and returns None — chaining [:k] onto it would fail.
     return sorted(scored, key=lambda item: item[1], reverse=True)[:k]
