@@ -192,10 +192,21 @@ Read and complete `model_card.md`:
 
 [**Model Card**](model_card.md)
 
-Write 1 to 2 paragraphs here about what you learned:
+Building this recommender made one thing clear: a scoring algorithm is only as powerful as
+the data behind it. The formula for scoring a song took an afternoon to design, but no amount
+of weight-tuning fixed the fact that most genres in the catalog had exactly one song. A blues
+listener, a country listener, and a classical listener all hit the same ceiling — one strong
+match at position one, then energy-proximity filler for the rest. The data was the bottleneck,
+not the math. That is probably true of most AI systems: the algorithm is rarely the hard part.
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
+The bias question was more uncomfortable than expected. The catalog was built with the best
+intentions — diverse genres, varied moods — but lofi and chill still ended up over-represented,
+giving those listeners a better product than everyone else without any deliberate decision being
+made. It happened through small choices: which songs to include first, which moods to label,
+which energy values to assign. Real recommenders at scale face the same problem multiplied by
+millions of data points and thousands of implicit decisions made by people who probably never
+thought of themselves as making a fairness call. Building a small version of that system makes
+the stakes feel real in a way that reading about it does not.
 
 
 ---
